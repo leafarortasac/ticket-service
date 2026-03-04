@@ -1,128 +1,98 @@
 Ticket Service (Core System) 🎫🚀
 
-O Ticket Service é o coração do Sistema de Gestão de Chamados. Ele foi desenvolvido com foco em Multi-tenancy, garantindo que múltiplas empresas (tenants) utilizem a mesma infraestrutura com isolamento total de dados. O serviço gerencia o ciclo de vida dos chamados, fluxos de aprovação para tickets críticos e armazenamento de anexos.
+O Ticket Service é o motor de gestão de chamados da plataforma. Desenvolvido com foco em Multi-tenancy, ele garante o isolamento total de dados entre diferentes empresas utilizando a mesma infraestrutura. O serviço gerencia o ciclo de vida dos chamados, fluxos de aprovação automática e armazenamento assíncrono de anexos.
 
 🎯 Responsabilidades
 
-Isolamento Multi-tenant: Filtro automático de dados por tenant_id via Hibernate Filters e ThreadLocal.
+Isolamento Multi-tenant: Filtro automático de dados via Hibernate Filters e propagação de contexto por ThreadLocal.
 
-Gestão de Tickets: Workflow completo de estados (OPEN, IN_PROGRESS, RESOLVED, CLOSED, CANCELLED).
+Gestão de Tickets: Workflow de estados robusto (OPEN, IN_PROGRESS, RESOLVED, CLOSED, CANCELLED).
 
-Fluxo de Aprovação: Identificação automática de tickets de prioridade CRITICAL para aprovação gerencial.
+Fluxo de Aprovação: Gatilho automático para tickets CRITICAL, gerando pendências para o perfil MANAGER.
 
-Armazenamento de Anexos: Processamento assíncrono de arquivos (PDF, JPEG, PNG) com persistência em disco organizada por tenant.
+Armazenamento de Anexos: Upload assíncrono com persistência física em disco organizada por Tenant.
 
-Mensageria: Comunicação via RabbitMQ para processamento de SLAs e notificações.
+Mensageria: Comunicação via RabbitMQ para auditoria de eventos e processamento de SLAs.
 
 🔐 Segurança e Autenticação
 
-O serviço utiliza Spring Security 6.x com validação de Tokens JWT.
+Spring Security 6.x: Validação de Tokens JWT.
 
-RBAC (Role Based Access Control): Permissões distintas para CUSTOMER, AGENT, MANAGER e ADMIN.
+RBAC: Controle de acesso baseado em Roles (CUSTOMER, AGENT, MANAGER).
 
-Contexto de Tenant: O tenant_id é extraído do token e propagado via TenantContext para todas as camadas.
-
-Header Requerido: Authorization: Bearer <TOKEN_JWT>
+Contexto de Tenant: O tenant_id é extraído do JWT e injetado no TenantContext em cada requisição.
 
 🛠️ Tecnologias
 
-Java 21 (com suporte a Virtual Threads)
+Java 21: Uso de Virtual Threads para otimização de processamento I/O.
 
-Spring Boot 3.4.x
+Spring Boot 3.4.x: Base da aplicação.
 
-Spring Data JPA & Flyway: Migrations automáticas para o PostgreSQL 15.
+PostgreSQL 15 & Flyway: Persistência e versionamento de banco de dados.
 
-RabbitMQ: Processamento assíncrono de regras de negócio.
+RabbitMQ: Broker de mensageria.
 
-JUnit 5 & Mockito: Cobertura de testes > 70%.
-
-Shared Contracts: Integração com biblioteca de modelos compartilhados.
+JUnit 5 & Mockito: Cobertura de testes superior a 70%.
 
 📡 Documentação de API (Swagger)
 
-A documentação interativa com todos os endpoints, modelos e schemas pode ser acessada em:
-
-🔗 http://localhost:8081/swagger-ui.html
-
-   Endpoints Principais
-
-   POST /api/v1/tickets: Abertura de novos chamados.
-   
-   PATCH /api/v1/tickets/{id}: Transições de status (com validação de regras de negócio).
-   
-   POST /api/v1/tickets/{id}/attachments: Upload assíncrono de documentos (Máx 10MB).
-   
-   GET /api/v1/approvals: Listagem de solicitações pendentes para gerentes.
+Acesse a documentação interativa em: 🔗 http://localhost:8081/swagger-ui.html
 
 📦 Execução e Setup
 
 1. Pré-requisitos
-   Certifique-se de ter o Maven, Docker e Docker Compose instalados.
+
+Certifique-se de ter o Maven e o Docker Desktop instalados.
 
 2. Instalação de Contratos Compartilhados
-   Como o projeto utiliza uma biblioteca de modelos comum, instale-a primeiro:
 
-   Bash
-   cd shared-contracts
-   mvn clean install -DskipTests
+Este serviço depende da biblioteca de modelos comuns:
+
+Bash
+cd shared-contracts
+mvn clean install -DskipTests
 
 3. Subindo o Ambiente (Docker)
 
-   A aplicação está configurada para subir todo o ecossistema (PostgreSQL, RabbitMQ e App) com um único comando:
+Na pasta raiz do projeto principal:
 
 Bash
+docker-compose up -d --build
 
-docker-compose up --build
+As tabelas e filas serão criadas automaticamente na subida dos containers.
 
-As migrations do banco de dados serão executadas automaticamente pelo Flyway.
+🚀 Guia de Validação (Passo a Passo)
 
-🧪 Testes e Qualidade
+Para validar a solução conforme as regras de negócio, siga esta ordem lógica:
 
-Para validar a cobertura de testes e as regras de negócio:
+1. Configuração de Domínio (Pré-requisito)
 
-Bash
-mvn test
+Antes de abrir um chamado, é necessário que o Tenant possua categorias cadastradas (ex: Software, Hardware).
 
-🚀 Guia de Validação (Cenários de Teste)
+Ação: Realize um POST /api/v1/categories criando uma categoria.
 
-Para facilitar a avaliação das regras de negócio exigidas, seguem os principais fluxos de teste:
+Resultado: Você receberá um UUID da categoria. Guarde-o para o próximo passo.
 
-1. Teste de Isolamento Total (Multi-tenancy)
-   
-   Objetivo: Garantir que os dados de uma empresa não "vazam" para outra.
+2. Abertura de Ticket e Teste de Isolamento
 
-   Ação: Utilize um Token JWT vinculado ao Tenant B e tente listar os tickets através do endpoint GET /api/v1/tickets.
+Ação: Com o ID da categoria, faça um POST /api/v1/tickets. Em seguida, tente listar os tickets (GET) usando um Token de um Tenant B.
 
-   Resultado Esperado: A lista deve retornar vazia ou conter apenas tickets criados para o Tenant B. Tickets de outros Tenants nunca devem ser retornados, mesmo que o ID seja conhecido.
+Resultado Esperado: O Tenant B não deve visualizar os tickets do Tenant A, garantindo o isolamento total.
 
-2. Workflow de Aprovação (Gatilho de Prioridade)
-   
-   Objetivo: Validar o escalonamento automático de chamados críticos.
+3. Workflow de Aprovação (Gatilho de Prioridade)
 
-   Ação: Crie um novo ticket via POST /api/v1/tickets definindo o campo priority como CRITICAL.
+Ação: Crie um ticket com prioridade CRITICAL.
 
-   Resultado Esperado: 1.  O sistema deve processar o evento de forma assíncrona.
-   
-   Verifique a tabela approval_requests: um novo registro deve ter sido criado automaticamente vinculado a este ticket.
-   
-   Log: O TicketConsumer deve registar a identificação de criticidade e o disparo da lógica de aprovação.
+Resultado Esperado: O sistema disparará um evento assíncrono. Verifique no banco (ou via API de aprovações) que um registro foi criado na tabela approval_requests.
 
-3. Regras de Transição de Status (Business Exception)
-   
-   Objetivo: Validar a consistência do workflow de estados (Pág. 7 do PDF).
+4. Regras de Transição (Business Exception)
 
-   Ação: Tente atualizar o status de um ticket que está OPEN diretamente para CLOSED via PATCH /api/v1/tickets/{id}.
+Ação: Tente mudar o status de um ticket de OPEN diretamente para CLOSED.
 
-   Resultado Esperado: O sistema deve impedir a operação e retornar um erro 400 Bad Request ou 422 Unprocessable Entity com um JSON estruturado, informando que a transição é inválida (ex: o ticket deve passar por IN_PROGRESS antes de ser fechado).
-   
-4. Upload Assíncrono de Anexos
-   
-   Objetivo: Validar o processamento de binários e persistência em disco.
+Resultado Esperado: O sistema deve lançar uma Business Exception (400/422), exigindo que o ticket passe por IN_PROGRESS primeiro.
 
-   Ação: Envie um arquivo (PDF, JPG ou PNG) através do endpoint POST /api/v1/tickets/{id}/attachments.
+5. Upload Assíncrono de Anexos
 
-   Resultado Esperado: 1.  Retorno imediato 202 Accepted. 
+Ação: Envie um arquivo via POST /api/v1/tickets/{id}/attachments.
 
-   O arquivo deve ser armazenado fisicamente na pasta ./uploads/{tenantId}/.
-
-   Os metadados (nome, tipo, tamanho) devem ser persistidos na tabela attachments.
+Resultado Esperado: Retorno 202 Accepted. O arquivo deve aparecer na pasta física ./uploads/{tenantId}/ e os metadados no banco de dados.
